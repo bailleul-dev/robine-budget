@@ -1,0 +1,48 @@
+version: "2"
+
+linters:
+  # "standard" = govet, errcheck, staticcheck, ineffassign, unused.
+  default: standard
+  enable:
+    - exhaustive
+  settings:
+    exhaustive:
+      # A `default:` branch does NOT count as covering the remaining enum
+      # values: every value gets its own case, so adding one (say a new
+      # RecurrenceType) breaks the lint instead of silently falling into
+      # whatever the default did. Keep `default:` for rejecting unknowns.
+      default-signifies-exhaustive: false
+    errcheck:
+      # Deferred cleanup whose error has nowhere useful to go: a Close on a
+      # read-side body/file, or a Rollback after a Commit already happened.
+      exclude-functions:
+        - (io.Closer).Close
+        - (io.ReadCloser).Close
+        - (*os.File).Close
+        - (*os.Root).Close
+        - (*database/sql.DB).Close
+        - (*net/smtp.Client).Close
+        - (net.Conn).Close
+        - (*github.com/minio/minio-go/v7.Object).Close
+        - (github.com/jackc/pgx/v5.Tx).Rollback
+    staticcheck:
+      checks:
+        - all
+        # money.Amount / civil.Date embed decimal.Decimal / time.Time;
+        # spelling out `.Decimal` / `.Time` at call sites is intentional.
+        - -QF1008
+        # sb.WriteString(fmt.Sprintf(...)) is fine for query building.
+        - -QF1012
+        # Style-only checks (naming, comment form) — not what this lint is for.
+        - -ST1000
+        - -ST1003
+        - -ST1016
+        - -ST1020
+        - -ST1021
+        - -ST1022
+  exclusions:
+    rules:
+      # Test setup calls whose errors don't matter to the assertion.
+      - path: _test\.go
+        linters:
+          - errcheck

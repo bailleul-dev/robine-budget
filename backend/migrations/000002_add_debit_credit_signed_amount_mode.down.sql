@@ -1,0 +1,3 @@
+-- Postgres has no ALTER TYPE ... DROP VALUE; removing it would require
+-- rebuilding the enum and rewriting any rows using it. Not needed in
+-- practice (mirrors the Alembic migration's no-op downgrade), left empty.

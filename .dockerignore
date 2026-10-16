@@ -1,0 +1,11 @@
+.git
+*.csv
+
+backend/tmp
+
+frontend/node_modules
+frontend/dist
+mobile/node_modules
+mobile/.expo
+mobile/ios
+mobile/build

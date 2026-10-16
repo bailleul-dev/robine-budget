@@ -1,0 +1,56 @@
+# App Store screenshots, driven by screenshots/run.sh (which seeds the demo
+# user and passes its credentials in). Shots are named NN-name so they keep
+# this order on the store listing.
+appId: dev.bailleul.budget
+env:
+  DEMO_EMAIL: camille@lagune.app
+  DEMO_PASSWORD: lagune-demo-2026
+---
+- launchApp:
+    clearState: true
+    clearKeychain: true
+- extendedWaitUntil:
+    visible:
+      id: login-email
+    timeout: 60000
+- tapOn:
+    id: login-email
+- inputText: ${DEMO_EMAIL}
+- tapOn:
+    id: login-password
+- inputText: ${DEMO_PASSWORD}
+- tapOn:
+    id: login-submit
+# iOS offers to save the password to the keychain.
+- tapOn:
+    text: Plus tard
+    optional: true
+- extendedWaitUntil:
+    visible: Vos comptes
+    timeout: 30000
+- waitForAnimationToEnd
+- takeScreenshot: 01-comptes
+
+# The row is one accessibility element ("C, Compte courant, 2 184,37 €").
+- tapOn: .*Compte courant.*
+- extendedWaitUntil:
+    visible: Solde actuel
+    timeout: 15000
+- waitForAnimationToEnd
+- takeScreenshot: 02-compte
+# No "back" on iOS: switching tabs is enough, Comptes keeps its own stack.
+
+- tapOn: Budgets
+- extendedWaitUntil:
+    visible: Vos budgets
+    timeout: 15000
+- waitForAnimationToEnd
+- takeScreenshot: 03-budgets
+
+- tapOn: Graphiques
+- waitForAnimationToEnd
+- takeScreenshot: 04-graphiques
+
+- tapOn: Catégories
+- waitForAnimationToEnd
+- takeScreenshot: 05-categories

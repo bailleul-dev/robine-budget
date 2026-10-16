@@ -1,0 +1,4 @@
+This directory is replaced with the built frontend/dist assets during the
+Docker build (see Dockerfile) — go:embed needs at least one file here to
+compile, so this placeholder keeps `go build`/`go vet`/`air` working in
+local dev, where the frontend runs separately via `npm run dev` instead.

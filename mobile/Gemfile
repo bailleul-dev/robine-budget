@@ -1,0 +1,5 @@
+source "https://rubygems.org"
+
+gem "fastlane", "~> 2.240"
+# expo prebuild runs `pod install`, which has to resolve inside the bundle.
+gem "cocoapods", "~> 1.17"

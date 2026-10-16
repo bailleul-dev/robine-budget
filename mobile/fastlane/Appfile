@@ -1,0 +1,3 @@
+app_identifier("dev.bailleul.budget")
+apple_id(ENV.fetch("FASTLANE_USER", "guillaume.bailleul@gmail.com"))
+team_id(ENV.fetch("APPLE_TEAM_ID", "986VZQX8W4"))

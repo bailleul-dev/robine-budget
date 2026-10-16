@@ -1,0 +1,130 @@
+# Builds, signs and uploads the iOS app to App Store Connect locally — no
+# EAS. Driven by `make ios-archive` / `make ios-upload` / `make ios-beta`,
+# or directly: `bundle exec fastlane ios beta` from mobile/.
+#
+#   ios/ is generated (Continuous Native Generation, gitignored): every build
+#   starts from `expo prebuild --clean`, so app.json/app.config.ts stay the
+#   single source of truth for native config.
+#
+# Required: Xcode, CocoaPods, and an "Apple Distribution" certificate for
+# APPLE_TEAM_ID in the keychain. Provisioning profiles are managed by Xcode
+# (automatic signing), authenticated either by the Apple ID signed into
+# Xcode or an App Store Connect API key (ASC_KEY_PATH/ASC_KEY_ID/
+# ASC_ISSUER_ID, see fastlane/.env.example) — which also makes uploads
+# prompt-free.
+
+default_platform(:ios)
+
+# Lanes run from fastlane/; everything below is relative to mobile/.
+ROOT = File.expand_path("..", __dir__)
+SCHEME = "Lagune"
+BUILD_DIR = File.join(ROOT, "build/ios")
+IPA = File.join(BUILD_DIR, "#{SCHEME}.ipa")
+
+ENV["APPLE_TEAM_ID"] ||= "986VZQX8W4"
+ENV["EXPO_PUBLIC_API_URL"] ||= "https://lagune.bailleul.dev/api"
+# App Store Connect needs a unique, increasing build number per upload of
+# the same version; app.config.ts picks this one up at prebuild.
+ENV["IOS_BUILD_NUMBER"] ||= Time.now.utc.strftime("%Y%m%d%H%M")
+ENV["NODE_ENV"] = "production"
+
+platform :ios do
+  desc "Regenerate ios/ from the app config (expo prebuild --clean)"
+  lane :prebuild do
+    unless File.exist?(File.join(ROOT, "code-signing/certificate.pem")) || ENV["ALLOW_UNSIGNED_OTA"] == "1"
+      UI.user_error!("code-signing/certificate.pem is missing: this build would accept UNSIGNED OTA updates. " \
+                     "Run 'make ota-keys' first (once), or set ALLOW_UNSIGNED_OTA=1 to proceed anyway.")
+    end
+    UI.message("Prebuilding ios/ (API: #{ENV['EXPO_PUBLIC_API_URL']}, build #{ENV['IOS_BUILD_NUMBER']})")
+    Dir.chdir(ROOT) { sh("npx", "expo", "prebuild", "--platform", "ios", "--clean") }
+  end
+
+  desc "Build a signed Release .ipa for App Store Connect"
+  lane :build do
+    prebuild
+    build_app(
+      workspace: File.join(ROOT, "ios/#{SCHEME}.xcworkspace"),
+      scheme: SCHEME,
+      configuration: "Release",
+      destination: "generic/platform=iOS",
+      output_directory: BUILD_DIR,
+      output_name: "#{SCHEME}.ipa",
+      archive_path: File.join(BUILD_DIR, "#{SCHEME}.xcarchive"),
+      clean: true,
+      export_method: "app-store",
+      export_team_id: ENV["APPLE_TEAM_ID"],
+      export_options: { signingStyle: "automatic", uploadSymbols: true, manageAppVersionAndBuildNumber: false },
+      # gym passes xcargs to both the archive and the export step.
+      xcargs: "DEVELOPMENT_TEAM=#{ENV['APPLE_TEAM_ID']} CODE_SIGN_STYLE=Automatic #{asc_xcargs}"
+    )
+    UI.success("IPA: #{IPA}")
+  end
+
+  desc "Upload the last built .ipa to TestFlight"
+  lane :upload do
+    UI.user_error!("No IPA at #{IPA} — run 'make ios-archive' first.") unless File.exist?(IPA)
+    api_key = asc_api_key
+    upload_to_testflight(
+      ipa: IPA,
+      api_key: api_key,
+      skip_waiting_for_build_processing: true
+    )
+    UI.success("Uploaded. It shows up in App Store Connect → TestFlight once processed (usually 5–30 min).")
+  end
+
+  desc "Build + upload to TestFlight in one go"
+  lane :beta do
+    build
+    upload
+  end
+
+  desc "Capture App Store screenshots on the simulator (screenshots/run.sh)"
+  lane :screenshots do
+    sh(File.join(ROOT, "screenshots/run.sh"))
+  end
+
+  desc "Upload fastlane/screenshots/ to the App Store listing (replaces existing ones)"
+  lane :upload_screenshots do
+    dir = File.join(ROOT, "fastlane/screenshots")
+    UI.user_error!("No screenshots in #{dir} — run 'make ios-screenshots' first.") if Dir.glob("#{dir}/**/*.png").empty?
+    upload_to_app_store(
+      api_key: asc_api_key,
+      screenshots_path: dir,
+      overwrite_screenshots: true,
+      skip_binary_upload: true,
+      skip_metadata: true,
+      skip_app_version_update: true,
+      submit_for_review: false,
+      run_precheck_before_submit: false,
+      force: true
+    )
+  end
+end
+
+def asc_configured?
+  !ENV["ASC_KEY_PATH"].to_s.empty?
+end
+
+def asc_api_key
+  return nil unless asc_configured?
+
+  app_store_connect_api_key(
+    key_id: ENV.fetch("ASC_KEY_ID"),
+    issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+    key_filepath: File.expand_path(ENV.fetch("ASC_KEY_PATH"))
+  )
+end
+
+# Lets xcodebuild create/refresh provisioning profiles, through the API key
+# when there is one, otherwise the Apple ID signed into Xcode.
+def asc_xcargs
+  flags = ["-allowProvisioningUpdates"]
+  if asc_configured?
+    flags += [
+      "-authenticationKeyPath", File.expand_path(ENV.fetch("ASC_KEY_PATH")).shellescape,
+      "-authenticationKeyID", ENV.fetch("ASC_KEY_ID"),
+      "-authenticationKeyIssuerID", ENV.fetch("ASC_ISSUER_ID")
+    ]
+  end
+  flags.join(" ")
+end
